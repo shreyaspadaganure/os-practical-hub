@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Practical 1 – Address Book using Shell Script | OS Practical Hub</title>
+<meta name="description" content="Address Book using Shell Script">
+<link rel="stylesheet" href="assets/css/code.css">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<header class="site-header"><div class="wrap">
+  <h1><a href="index.html">OS Practical Hub</a></h1>
+  <p>Operating System Practical Programs</p>
+</div></header>
+<main class="wrap">
+  <a class="back" href="index.html">&larr; Back to Practicals</a>
+  <p class="page-kicker" style="margin-top:14px">Practical 1</p>
+  <h1 class="page-title" style="margin-top:2px">Address Book using Shell Script</h1>
+
+  <section class="block" id="theory">
+    <h2>Theory</h2>
+<p>This practical builds a small <strong>menu-driven address book</strong> using a <strong>shell script</strong>. Each contact is stored as one line in a plain text file.</p>
+<h3>Key concepts</h3>
+<ul>
+  <li><strong>Shell</strong> – a program (here <code>bash</code>) that reads commands typed by the user or from a file and asks the operating system to run them.</li>
+  <li><strong>Shell script</strong> – a text file containing shell commands. The first line <code>#!/bin/bash</code> (the <em>shebang</em>) tells the system which interpreter should run it. Make it executable with <code>chmod +x</code>.</li>
+  <li><strong>Functions</strong> – <code>create_book</code>, <code>view_book</code>, <code>insert_record</code>, <code>delete_record</code> and <code>modify_record</code> each handle one menu option, keeping the script organised.</li>
+  <li><strong><code>read -p</code></strong> – prints a prompt and stores what the user types in a variable.</li>
+  <li><strong><code>case … esac</code></strong> – chooses which function to run depending on the menu letter entered. <code>${ch,,}</code> converts the choice to lower case.</li>
+  <li><strong>Redirection</strong> – <code>&gt;</code> overwrites a file (<code>: &gt; "$FILE"</code> creates an empty one) and <code>&gt;&gt;</code> appends a new line to it.</li>
+</ul>
+<h3>Tools used for the records</h3>
+<ul>
+  <li><strong><code>grep</code></strong> – searches for a pattern. <code>grep -q "^$id|"</code> checks silently whether a line starts with the given ID; <code>grep -v</code> prints all lines that do <em>not</em> match, which is how a record is deleted.</li>
+  <li><strong><code>awk</code></strong> – processes text field by field. With <code>-F'|'</code> the <code>|</code> character separates the fields (ID, name, phone, email). It is used both to print the table and to rewrite one record when modifying.</li>
+  <li><strong><code>mv</code></strong> – replaces the address book with the edited temporary file.</li>
+</ul>
+<h3>Record format</h3>
+<p>One contact per line: <code>ID|Name|Phone|Email</code>. The ID acts like a primary key – the script refuses to insert a duplicate ID.</p>
+  </section>
+
+  <section class="block" id="code">
+    <h2>Code</h2>
+    <div class="codebox">
+      <div class="codebar">
+        <span class="left"><span class="dots"><i></i><i></i><i></i></span><span class="fname">addressbook.sh</span></span>
+        <button type="button" class="copy-btn">Copy Code</button>
+      </div>
+<div class="highlight"><pre><span></span><span class="ch">#!/bin/bash</span>
+<span class="c1"># Practical 1 : Address Book (Shell Script)</span>
+<span class="nv">FILE</span><span class="o">=</span><span class="s2">&quot;&quot;</span>
+
+check_file<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-z<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>!<span class="w"> </span>-f<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">        </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Address book not created yet. Choose option (a) first.&quot;</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="m">1</span>
+<span class="w">    </span><span class="k">fi</span>
+<span class="o">}</span>
+
+create_book<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<span class="w">    </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter address book file name: &quot;</span><span class="w"> </span>FILE
+<span class="w">    </span>:<span class="w"> </span>&gt;<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Address book &#39;</span><span class="nv">$FILE</span><span class="s2">&#39; created successfully.&quot;</span>
+<span class="o">}</span>
+
+view_book<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<span class="w">    </span>check_file<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="k">return</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>!<span class="w"> </span>-s<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">        </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Address book is empty.&quot;</span>
+<span class="w">        </span><span class="k">return</span>
+<span class="w">    </span><span class="k">fi</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;-----------------------------------------------------------------&quot;</span>
+<span class="w">    </span><span class="nb">printf</span><span class="w"> </span><span class="s2">&quot;%-6s %-18s %-12s %-26s\n&quot;</span><span class="w"> </span><span class="s2">&quot;ID&quot;</span><span class="w"> </span><span class="s2">&quot;NAME&quot;</span><span class="w"> </span><span class="s2">&quot;PHONE&quot;</span><span class="w"> </span><span class="s2">&quot;EMAIL&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;-----------------------------------------------------------------&quot;</span>
+<span class="w">    </span>awk<span class="w"> </span>-F<span class="s1">&#39;|&#39;</span><span class="w"> </span><span class="s1">&#39;{printf &quot;%-6s %-18s %-12s %-26s\n&quot;, $1, $2, $3, $4}&#39;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;-----------------------------------------------------------------&quot;</span>
+<span class="o">}</span>
+
+insert_record<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<span class="w">    </span>check_file<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="k">return</span>
+<span class="w">    </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter ID: &quot;</span><span class="w"> </span>id
+<span class="w">    </span><span class="k">if</span><span class="w"> </span>grep<span class="w"> </span>-q<span class="w"> </span><span class="s2">&quot;^</span><span class="nv">$id</span><span class="s2">|&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">        </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Record with ID </span><span class="nv">$id</span><span class="s2"> already exists.&quot;</span>
+<span class="w">        </span><span class="k">return</span>
+<span class="w">    </span><span class="k">fi</span>
+<span class="w">    </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter Name: &quot;</span><span class="w"> </span>name
+<span class="w">    </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter Phone: &quot;</span><span class="w"> </span>phone
+<span class="w">    </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter Email: &quot;</span><span class="w"> </span>email
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$id</span><span class="s2">|</span><span class="nv">$name</span><span class="s2">|</span><span class="nv">$phone</span><span class="s2">|</span><span class="nv">$email</span><span class="s2">&quot;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Record inserted successfully.&quot;</span>
+<span class="o">}</span>
+
+delete_record<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<span class="w">    </span>check_file<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="k">return</span>
+<span class="w">    </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter ID to delete: &quot;</span><span class="w"> </span>id
+<span class="w">    </span><span class="k">if</span><span class="w"> </span>grep<span class="w"> </span>-q<span class="w"> </span><span class="s2">&quot;^</span><span class="nv">$id</span><span class="s2">|&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">        </span>grep<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;^</span><span class="nv">$id</span><span class="s2">|&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span>temp.txt
+<span class="w">        </span>mv<span class="w"> </span>temp.txt<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span>
+<span class="w">        </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Record deleted successfully.&quot;</span>
+<span class="w">    </span><span class="k">else</span>
+<span class="w">        </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Record with ID </span><span class="nv">$id</span><span class="s2"> not found.&quot;</span>
+<span class="w">    </span><span class="k">fi</span>
+<span class="o">}</span>
+
+modify_record<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<span class="w">    </span>check_file<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="k">return</span>
+<span class="w">    </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter ID to modify: &quot;</span><span class="w"> </span>id
+<span class="w">    </span><span class="k">if</span><span class="w"> </span>grep<span class="w"> </span>-q<span class="w"> </span><span class="s2">&quot;^</span><span class="nv">$id</span><span class="s2">|&quot;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<span class="w">        </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter new Name: &quot;</span><span class="w"> </span>name
+<span class="w">        </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter new Phone: &quot;</span><span class="w"> </span>phone
+<span class="w">        </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter new Email: &quot;</span><span class="w"> </span>email
+<span class="w">        </span>awk<span class="w"> </span>-F<span class="s1">&#39;|&#39;</span><span class="w"> </span>-v<span class="w"> </span><span class="nv">OFS</span><span class="o">=</span><span class="s1">&#39;|&#39;</span><span class="w"> </span>-v<span class="w"> </span><span class="nv">id</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$id</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="nv">n</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$name</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="nv">p</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$phone</span><span class="s2">&quot;</span><span class="w"> </span>-v<span class="w"> </span><span class="nv">e</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$email</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">            </span><span class="s1">&#39;$1==id {$2=n; $3=p; $4=e} 1&#39;</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span>temp.txt
+<span class="w">        </span>mv<span class="w"> </span>temp.txt<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$FILE</span><span class="s2">&quot;</span>
+<span class="w">        </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Record modified successfully.&quot;</span>
+<span class="w">    </span><span class="k">else</span>
+<span class="w">        </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Record with ID </span><span class="nv">$id</span><span class="s2"> not found.&quot;</span>
+<span class="w">    </span><span class="k">fi</span>
+<span class="o">}</span>
+
+<span class="k">while</span><span class="w"> </span>true<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">    </span><span class="nb">echo</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;========== ADDRESS BOOK ==========&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;a) Create address book&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;b) View address book&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;c) Insert a record&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;d) Delete a record&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;e) Modify a record&quot;</span>
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;f) Exit&quot;</span>
+<span class="w">    </span><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Enter your choice: &quot;</span><span class="w"> </span>ch
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ch</span><span class="p">,,</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="k">in</span>
+<span class="w">        </span>a<span class="o">)</span><span class="w"> </span>create_book<span class="w"> </span><span class="p">;;</span>
+<span class="w">        </span>b<span class="o">)</span><span class="w"> </span>view_book<span class="w"> </span><span class="p">;;</span>
+<span class="w">        </span>c<span class="o">)</span><span class="w"> </span>insert_record<span class="w"> </span><span class="p">;;</span>
+<span class="w">        </span>d<span class="o">)</span><span class="w"> </span>delete_record<span class="w"> </span><span class="p">;;</span>
+<span class="w">        </span>e<span class="o">)</span><span class="w"> </span>modify_record<span class="w"> </span><span class="p">;;</span>
+<span class="w">        </span>f<span class="o">)</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Exiting...&quot;</span><span class="p">;</span><span class="w"> </span><span class="nb">exit</span><span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="p">;;</span>
+<span class="w">        </span>*<span class="o">)</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Invalid choice. Try again.&quot;</span><span class="w"> </span><span class="p">;;</span>
+<span class="w">    </span><span class="k">esac</span>
+<span class="k">done</span>
+</pre></div>
+    </div>
+  </section>
+
+  <section class="block" id="output">
+    <h2>Output</h2>
+    <a href="assets/img/practical-1-output.png" target="_blank" rel="noopener"><img class="shot" src="assets/img/practical-1-output.png" alt="Output screenshot of Practical 1: Address Book using Shell Script"></a>
+    <p class="shot-hint">Tap or click the screenshot to open it full size.</p>
+  </section>
+
+  <a class="back" href="index.html" style="margin-bottom:32px">&larr; Back to Practicals</a>
+</main>
+<footer class="site-footer"><div class="wrap">OS Practical Hub</div></footer>
+<script src="assets/js/main.js"></script>
+</body>
+</html>
