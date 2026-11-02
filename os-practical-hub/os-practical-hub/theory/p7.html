@@ -1,0 +1,17 @@
+<p>This practical uses <strong>unnamed pipes</strong> so that a parent and child process can communicate in both directions. The parent sends a file name; the child opens the file and sends its contents back.</p>
+<h3>Key concepts</h3>
+<ul>
+  <li><strong>Pipe</strong> – a kernel buffer that lets one process write bytes and another read them in the same order (FIFO).</li>
+  <li><strong><code>pipe(fd)</code></strong> – creates a pipe and fills a 2-element array: <code>fd[0]</code> is the <strong>read end</strong>, <code>fd[1]</code> is the <strong>write end</strong>.</li>
+  <li><strong>Pipes and <code>fork()</code></strong> – the child inherits copies of the parent's file descriptors, so both processes can use the same pipe. This is why unnamed pipes only work between related processes.</li>
+  <li><strong>Half duplex vs full duplex</strong> – one pipe is one-way only. For two-way communication this program creates <strong>two pipes</strong>: <code>p1</code> (parent → child) and <code>p2</code> (child → parent).</li>
+  <li><strong>Closing unused ends</strong> – each process closes the pipe ends it does not use. A <code>read()</code> returns 0 (end of file) only when <em>all</em> write ends are closed, so forgetting to close them can make a reader wait forever.</li>
+  <li><strong>File system calls</strong> – <code>open()</code>, <code>read()</code>, <code>write()</code> and <code>close()</code> work with file descriptors, the same way for files and pipes.</li>
+</ul>
+<h3>Flow of the program</h3>
+<ol>
+  <li>Parent reads a file path from the user and writes it into pipe 1.</li>
+  <li>Child reads the path from pipe 1 and opens the file with <code>open()</code>.</li>
+  <li>If the file cannot be opened, the child sends an error message; otherwise it reads the file and writes its contents into pipe 2.</li>
+  <li>Parent reads pipe 2 and prints the contents on the screen, then calls <code>wait()</code> for the child.</li>
+</ol>

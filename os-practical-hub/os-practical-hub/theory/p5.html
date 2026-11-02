@@ -1,0 +1,28 @@
+<p>The <strong>Banker's Algorithm</strong> is a <strong>deadlock avoidance</strong> method. Before granting a resource request, the system checks whether the system will still be in a <em>safe state</em> afterwards – just as a banker never lends money if it could not satisfy all customers' maximum needs.</p>
+<h3>Data structures (n processes, m resource types)</h3>
+<ul>
+  <li><strong>Available</strong> – number of free instances of each resource type.</li>
+  <li><strong>Max</strong> – the maximum each process may ever request.</li>
+  <li><strong>Allocation</strong> – what each process currently holds.</li>
+  <li><strong>Need</strong> = Max − Allocation – what each process may still request.</li>
+</ul>
+<h3>Key definitions</h3>
+<ul>
+  <li><strong>Safe state</strong> – there is at least one order in which all processes can finish, each getting the resources it needs.</li>
+  <li><strong>Safe sequence</strong> – that order of processes, e.g. P1 → P3 → P4 → P0 → P2.</li>
+  <li><strong>Unsafe state</strong> – no safe sequence exists. It does not mean deadlock has happened, but deadlock is <em>possible</em>.</li>
+</ul>
+<h3>Safety algorithm (<code>is_safe</code>)</h3>
+<ol>
+  <li>Set <code>Work = Available</code> and mark every process unfinished.</li>
+  <li>Find an unfinished process whose <code>Need ≤ Work</code>.</li>
+  <li>Assume it finishes and returns its resources: <code>Work = Work + Allocation</code>; mark it finished and add it to the sequence.</li>
+  <li>Repeat. If all processes finish, the state is safe; if none can be found, it is unsafe.</li>
+</ol>
+<h3>Resource-request algorithm</h3>
+<ol>
+  <li>If <code>Request &gt; Need</code> → error (the process exceeded its maximum claim).</li>
+  <li>If <code>Request &gt; Available</code> → the process must wait.</li>
+  <li>Otherwise <em>pretend</em> to allocate: reduce Available and Need, increase Allocation.</li>
+  <li>Run the safety algorithm. If safe, grant the request; if unsafe, undo the change and deny it.</li>
+</ol>

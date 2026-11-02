@@ -1,0 +1,23 @@
+<p>The <strong>Producer–Consumer (bounded buffer) problem</strong> is a classic synchronisation problem. Producers put items into a fixed-size buffer and consumers take them out, at the same time.</p>
+<h3>The problems to solve</h3>
+<ul>
+  <li>A producer must <strong>wait</strong> if the buffer is full.</li>
+  <li>A consumer must <strong>wait</strong> if the buffer is empty.</li>
+  <li>Only one thread may change the buffer at a time – otherwise a <strong>race condition</strong> corrupts the data.</li>
+</ul>
+<h3>Key concepts</h3>
+<ul>
+  <li><strong>Critical section</strong> – the part of code that accesses shared data (here the buffer and its indexes).</li>
+  <li><strong>Semaphore</strong> – an integer variable changed only by two atomic operations: <code>sem_wait()</code> (decrement; blocks if the value is 0) and <code>sem_post()</code> (increment; wakes a waiting thread).</li>
+  <li><strong>Counting semaphore</strong> – can hold any non-negative value, so it can count free or used buffer slots.</li>
+  <li><strong>Mutex</strong> – a lock (<code>pthread_mutex_lock</code> / <code>unlock</code>) that allows only one thread inside the critical section at a time (mutual exclusion).</li>
+  <li><strong>Thread</strong> – a lightweight unit of execution inside a process; threads share the same memory. Created with <code>pthread_create</code> and waited for with <code>pthread_join</code>.</li>
+  <li><strong>Circular buffer</strong> – the indexes <code>in</code> and <code>out</code> wrap around using <code>% BUFFER_SIZE</code>.</li>
+</ul>
+<h3>How the solution works</h3>
+<ul>
+  <li><code>empty_slots</code> starts at <code>BUFFER_SIZE</code> (all slots free); <code>full_slots</code> starts at <code>0</code>.</li>
+  <li><strong>Producer:</strong> <code>sem_wait(empty_slots)</code> → lock mutex → insert item → unlock mutex → <code>sem_post(full_slots)</code>.</li>
+  <li><strong>Consumer:</strong> <code>sem_wait(full_slots)</code> → lock mutex → remove item → unlock mutex → <code>sem_post(empty_slots)</code>.</li>
+  <li>The counting semaphore is always taken <em>before</em> the mutex. Reversing this order can cause a deadlock, because a thread could hold the mutex while waiting for a slot.</li>
+</ul>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Practical 3 – Producer–Consumer Problem using Semaphores and Mutex | OS Practical Hub</title>
+<meta name="description" content="Producer–Consumer Problem using Semaphores and Mutex">
+<link rel="stylesheet" href="assets/css/code.css">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<header class="site-header"><div class="wrap">
+  <h1><a href="index.html">OS Practical Hub</a></h1>
+  <p>Operating System Practical Programs</p>
+</div></header>
+<main class="wrap">
+  <a class="back" href="index.html">&larr; Back to Practicals</a>
+  <p class="page-kicker" style="margin-top:14px">Practical 3</p>
+  <h1 class="page-title" style="margin-top:2px">Producer–Consumer Problem using Semaphores and Mutex</h1>
+
+  <section class="block" id="theory">
+    <h2>Theory</h2>
+<p>The <strong>Producer–Consumer (bounded buffer) problem</strong> is a classic synchronisation problem. Producers put items into a fixed-size buffer and consumers take them out, at the same time.</p>
+<h3>The problems to solve</h3>
+<ul>
+  <li>A producer must <strong>wait</strong> if the buffer is full.</li>
+  <li>A consumer must <strong>wait</strong> if the buffer is empty.</li>
+  <li>Only one thread may change the buffer at a time – otherwise a <strong>race condition</strong> corrupts the data.</li>
+</ul>
+<h3>Key concepts</h3>
+<ul>
+  <li><strong>Critical section</strong> – the part of code that accesses shared data (here the buffer and its indexes).</li>
+  <li><strong>Semaphore</strong> – an integer variable changed only by two atomic operations: <code>sem_wait()</code> (decrement; blocks if the value is 0) and <code>sem_post()</code> (increment; wakes a waiting thread).</li>
+  <li><strong>Counting semaphore</strong> – can hold any non-negative value, so it can count free or used buffer slots.</li>
+  <li><strong>Mutex</strong> – a lock (<code>pthread_mutex_lock</code> / <code>unlock</code>) that allows only one thread inside the critical section at a time (mutual exclusion).</li>
+  <li><strong>Thread</strong> – a lightweight unit of execution inside a process; threads share the same memory. Created with <code>pthread_create</code> and waited for with <code>pthread_join</code>.</li>
+  <li><strong>Circular buffer</strong> – the indexes <code>in</code> and <code>out</code> wrap around using <code>% BUFFER_SIZE</code>.</li>
+</ul>
+<h3>How the solution works</h3>
+<ul>
+  <li><code>empty_slots</code> starts at <code>BUFFER_SIZE</code> (all slots free); <code>full_slots</code> starts at <code>0</code>.</li>
+  <li><strong>Producer:</strong> <code>sem_wait(empty_slots)</code> → lock mutex → insert item → unlock mutex → <code>sem_post(full_slots)</code>.</li>
+  <li><strong>Consumer:</strong> <code>sem_wait(full_slots)</code> → lock mutex → remove item → unlock mutex → <code>sem_post(empty_slots)</code>.</li>
+  <li>The counting semaphore is always taken <em>before</em> the mutex. Reversing this order can cause a deadlock, because a thread could hold the mutex while waiting for a slot.</li>
+</ul>
+  </section>
+
+  <section class="block" id="code">
+    <h2>Code</h2>
+    <div class="codebox">
+      <div class="codebar">
+        <span class="left"><span class="dots"><i></i><i></i><i></i></span><span class="fname">pc.c</span></span>
+        <button type="button" class="copy-btn">Copy Code</button>
+      </div>
+<div class="highlight"><pre><span></span><span class="cm">/* Practical 3 : Producer-Consumer using counting semaphores and mutex */</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdio.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdlib.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;pthread.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;semaphore.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;unistd.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;time.h&gt;</span>
+
+<span class="cp">#define BUFFER_SIZE 3</span>
+<span class="cp">#define ITEMS_PER_THREAD 5</span>
+<span class="cp">#define NUM_PRODUCERS 2</span>
+<span class="cp">#define NUM_CONSUMERS 2</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="n">buffer</span><span class="p">[</span><span class="n">BUFFER_SIZE</span><span class="p">];</span>
+<span class="kt">int</span><span class="w"> </span><span class="n">in</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">out</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">item_counter</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="n">sem_t</span><span class="w"> </span><span class="n">empty_slots</span><span class="p">,</span><span class="w"> </span><span class="n">full_slots</span><span class="p">;</span><span class="w">                 </span><span class="cm">/* counting semaphores */</span>
+<span class="n">pthread_mutex_t</span><span class="w"> </span><span class="n">mutex</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PTHREAD_MUTEX_INITIALIZER</span><span class="p">;</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">producer</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">arg</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">*</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">arg</span><span class="p">;</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">ITEMS_PER_THREAD</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">usleep</span><span class="p">(</span><span class="mi">100000</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">rand</span><span class="p">()</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="mi">200000</span><span class="p">);</span>
+<span class="w">        </span><span class="n">sem_wait</span><span class="p">(</span><span class="o">&amp;</span><span class="n">empty_slots</span><span class="p">);</span><span class="w">                </span><span class="cm">/* wait for an empty slot */</span>
+<span class="w">        </span><span class="n">pthread_mutex_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mutex</span><span class="p">);</span><span class="w">            </span><span class="cm">/* enter critical section */</span>
+<span class="w">        </span><span class="kt">int</span><span class="w"> </span><span class="n">item</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">++</span><span class="n">item_counter</span><span class="p">;</span>
+<span class="w">        </span><span class="n">buffer</span><span class="p">[</span><span class="n">in</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">item</span><span class="p">;</span>
+<span class="w">        </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Producer %d produced item %2d -&gt; buffer[%d]</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">item</span><span class="p">,</span><span class="w"> </span><span class="n">in</span><span class="p">);</span>
+<span class="w">        </span><span class="n">in</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">in</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="n">BUFFER_SIZE</span><span class="p">;</span>
+<span class="w">        </span><span class="n">pthread_mutex_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mutex</span><span class="p">);</span>
+<span class="w">        </span><span class="n">sem_post</span><span class="p">(</span><span class="o">&amp;</span><span class="n">full_slots</span><span class="p">);</span><span class="w">                 </span><span class="cm">/* one more full slot */</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">consumer</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">arg</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">*</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">arg</span><span class="p">;</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">ITEMS_PER_THREAD</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">usleep</span><span class="p">(</span><span class="mi">300000</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">rand</span><span class="p">()</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="mi">300000</span><span class="p">);</span>
+<span class="w">        </span><span class="n">sem_wait</span><span class="p">(</span><span class="o">&amp;</span><span class="n">full_slots</span><span class="p">);</span><span class="w">                 </span><span class="cm">/* wait for a full slot */</span>
+<span class="w">        </span><span class="n">pthread_mutex_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mutex</span><span class="p">);</span>
+<span class="w">        </span><span class="kt">int</span><span class="w"> </span><span class="n">item</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">buffer</span><span class="p">[</span><span class="n">out</span><span class="p">];</span>
+<span class="w">        </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;    Consumer %d consumed item %2d &lt;- buffer[%d]</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">item</span><span class="p">,</span><span class="w"> </span><span class="n">out</span><span class="p">);</span>
+<span class="w">        </span><span class="n">out</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">out</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="n">BUFFER_SIZE</span><span class="p">;</span>
+<span class="w">        </span><span class="n">pthread_mutex_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mutex</span><span class="p">);</span>
+<span class="w">        </span><span class="n">sem_post</span><span class="p">(</span><span class="o">&amp;</span><span class="n">empty_slots</span><span class="p">);</span><span class="w">                </span><span class="cm">/* one more empty slot */</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">pthread_t</span><span class="w"> </span><span class="n">prod</span><span class="p">[</span><span class="n">NUM_PRODUCERS</span><span class="p">],</span><span class="w"> </span><span class="n">cons</span><span class="p">[</span><span class="n">NUM_CONSUMERS</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">pid</span><span class="p">[</span><span class="n">NUM_PRODUCERS</span><span class="p">],</span><span class="w"> </span><span class="n">cid</span><span class="p">[</span><span class="n">NUM_CONSUMERS</span><span class="p">];</span>
+<span class="w">    </span><span class="n">srand</span><span class="p">(</span><span class="n">time</span><span class="p">(</span><span class="nb">NULL</span><span class="p">));</span>
+<span class="w">    </span><span class="n">sem_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">empty_slots</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">BUFFER_SIZE</span><span class="p">);</span>
+<span class="w">    </span><span class="n">sem_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">full_slots</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Buffer size = %d, Producers = %d, Consumers = %d</span><span class="se">\n\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">BUFFER_SIZE</span><span class="p">,</span>
+<span class="w">           </span><span class="n">NUM_PRODUCERS</span><span class="p">,</span><span class="w"> </span><span class="n">NUM_CONSUMERS</span><span class="p">);</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">NUM_PRODUCERS</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">pid</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="n">pthread_create</span><span class="p">(</span><span class="o">&amp;</span><span class="n">prod</span><span class="p">[</span><span class="n">i</span><span class="p">],</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span>
+<span class="w">                   </span><span class="n">producer</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">pid</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">NUM_CONSUMERS</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">cid</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="n">pthread_create</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cons</span><span class="p">[</span><span class="n">i</span><span class="p">],</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span>
+<span class="w">                   </span><span class="n">consumer</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">cid</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">NUM_PRODUCERS</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="n">pthread_join</span><span class="p">(</span><span class="n">prod</span><span class="p">[</span><span class="n">i</span><span class="p">],</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">NUM_CONSUMERS</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="n">pthread_join</span><span class="p">(</span><span class="n">cons</span><span class="p">[</span><span class="n">i</span><span class="p">],</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">All items produced and consumed successfully.</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="n">sem_destroy</span><span class="p">(</span><span class="o">&amp;</span><span class="n">empty_slots</span><span class="p">);</span>
+<span class="w">    </span><span class="n">sem_destroy</span><span class="p">(</span><span class="o">&amp;</span><span class="n">full_slots</span><span class="p">);</span>
+<span class="w">    </span><span class="n">pthread_mutex_destroy</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mutex</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+    </div>
+  </section>
+
+  <section class="block" id="output">
+    <h2>Output</h2>
+    <a href="assets/img/practical-3-output.png" target="_blank" rel="noopener"><img class="shot" src="assets/img/practical-3-output.png" alt="Output screenshot of Practical 3: Producer–Consumer Problem using Semaphores and Mutex"></a>
+    <p class="shot-hint">Tap or click the screenshot to open it full size.</p>
+  </section>
+
+  <a class="back" href="index.html" style="margin-bottom:32px">&larr; Back to Practicals</a>
+</main>
+<footer class="site-footer"><div class="wrap">OS Practical Hub</div></footer>
+<script src="assets/js/main.js"></script>
+</body>
+</html>

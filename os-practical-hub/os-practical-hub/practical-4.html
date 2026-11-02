@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Practical 4 – Dining Philosophers Problem using Semaphores | OS Practical Hub</title>
+<meta name="description" content="Dining Philosophers Problem using Semaphores">
+<link rel="stylesheet" href="assets/css/code.css">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<header class="site-header"><div class="wrap">
+  <h1><a href="index.html">OS Practical Hub</a></h1>
+  <p>Operating System Practical Programs</p>
+</div></header>
+<main class="wrap">
+  <a class="back" href="index.html">&larr; Back to Practicals</a>
+  <p class="page-kicker" style="margin-top:14px">Practical 4</p>
+  <h1 class="page-title" style="margin-top:2px">Dining Philosophers Problem using Semaphores</h1>
+
+  <section class="block" id="theory">
+    <h2>Theory</h2>
+<p>The <strong>Dining Philosophers problem</strong> models how several processes share limited resources without deadlock. Five philosophers sit around a table with one fork between each pair of neighbours. To eat, a philosopher needs <strong>both</strong> the left and the right fork.</p>
+<h3>Key concepts</h3>
+<ul>
+  <li><strong>Deadlock</strong> – a situation where processes wait for each other forever. If every philosopher picks up the left fork at the same time, nobody can get the right fork and all wait indefinitely.</li>
+  <li><strong>Conditions for deadlock</strong> – mutual exclusion, hold and wait, no pre-emption, and circular wait. Breaking any one of them prevents deadlock.</li>
+  <li><strong>Starvation</strong> – a process never gets the resource it needs, even though the system is not deadlocked.</li>
+  <li><strong>Semaphore</strong> – a synchronisation variable with <code>sem_wait()</code> (acquire) and <code>sem_post()</code> (release). A semaphore initialised to 1 works as a lock.</li>
+</ul>
+<h3>Solution used in this program</h3>
+<ul>
+  <li>One semaphore per fork (<code>fork_sem[i]</code>, initial value 1) so a fork is used by only one philosopher at a time.</li>
+  <li>An extra counting semaphore <code>room</code> with initial value <code>N - 1</code> (4). Only four philosophers may try to pick up forks at once.</li>
+  <li>Because at most 4 of the 5 philosophers compete, at least one can always get both forks, so the <strong>circular wait is broken</strong> and deadlock cannot happen.</li>
+</ul>
+<h3>Philosopher cycle</h3>
+<p>THINKING → HUNGRY → <code>sem_wait(room)</code> → pick up left and right forks → EATING → put down both forks → <code>sem_post(room)</code>. Each philosopher repeats this for <code>ROUNDS</code> (2) rounds. Each philosopher runs as a separate <strong>pthread</strong>.</p>
+  </section>
+
+  <section class="block" id="code">
+    <h2>Code</h2>
+    <div class="codebox">
+      <div class="codebar">
+        <span class="left"><span class="dots"><i></i><i></i><i></i></span><span class="fname">dining.c</span></span>
+        <button type="button" class="copy-btn">Copy Code</button>
+      </div>
+<div class="highlight"><pre><span></span><span class="cm">/* Practical 4 : Deadlock-free Dining Philosophers using semaphores */</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdio.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;pthread.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;semaphore.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;unistd.h&gt;</span>
+
+<span class="cp">#define N 5</span>
+<span class="cp">#define ROUNDS 2</span>
+
+<span class="n">sem_t</span><span class="w"> </span><span class="n">fork_sem</span><span class="p">[</span><span class="n">N</span><span class="p">];</span><span class="w"> </span><span class="cm">/* one semaphore per fork */</span>
+<span class="n">sem_t</span><span class="w"> </span><span class="n">room</span><span class="p">;</span><span class="w">        </span><span class="cm">/* at most N-1 philosophers may try to eat -&gt; no deadlock */</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">philosopher</span><span class="p">(</span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">arg</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">*</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="o">*</span><span class="p">)</span><span class="n">arg</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">left</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">right</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="n">N</span><span class="p">;</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="n">r</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">ROUNDS</span><span class="p">;</span><span class="w"> </span><span class="n">r</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Philosopher %d is THINKING</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+<span class="w">        </span><span class="n">usleep</span><span class="p">(</span><span class="mi">200000</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">50000</span><span class="p">);</span>
+
+<span class="w">        </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Philosopher %d is HUNGRY</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+<span class="w">        </span><span class="n">sem_wait</span><span class="p">(</span><span class="o">&amp;</span><span class="n">room</span><span class="p">);</span>
+<span class="w">        </span><span class="n">sem_wait</span><span class="p">(</span><span class="o">&amp;</span><span class="n">fork_sem</span><span class="p">[</span><span class="n">left</span><span class="p">]);</span>
+<span class="w">        </span><span class="n">sem_wait</span><span class="p">(</span><span class="o">&amp;</span><span class="n">fork_sem</span><span class="p">[</span><span class="n">right</span><span class="p">]);</span>
+
+<span class="w">        </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Philosopher %d is EATING (round %d) using forks %d and %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">r</span><span class="p">,</span><span class="w"> </span><span class="n">left</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">               </span><span class="n">right</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+<span class="w">        </span><span class="n">usleep</span><span class="p">(</span><span class="mi">400000</span><span class="p">);</span>
+
+<span class="w">        </span><span class="n">sem_post</span><span class="p">(</span><span class="o">&amp;</span><span class="n">fork_sem</span><span class="p">[</span><span class="n">left</span><span class="p">]);</span>
+<span class="w">        </span><span class="n">sem_post</span><span class="p">(</span><span class="o">&amp;</span><span class="n">fork_sem</span><span class="p">[</span><span class="n">right</span><span class="p">]);</span>
+<span class="w">        </span><span class="n">sem_post</span><span class="p">(</span><span class="o">&amp;</span><span class="n">room</span><span class="p">);</span>
+<span class="w">        </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Philosopher %d finished eating, released forks %d and %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">left</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">right</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">pthread_t</span><span class="w"> </span><span class="n">t</span><span class="p">[</span><span class="n">N</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">id</span><span class="p">[</span><span class="n">N</span><span class="p">];</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">N</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="n">sem_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">fork_sem</span><span class="p">[</span><span class="n">i</span><span class="p">],</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+<span class="w">    </span><span class="n">sem_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">room</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">N</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Dining Philosophers (%d philosophers, %d rounds each)</span><span class="se">\n\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">N</span><span class="p">,</span><span class="w"> </span><span class="n">ROUNDS</span><span class="p">);</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">N</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">id</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">i</span><span class="p">;</span><span class="w"> </span><span class="n">pthread_create</span><span class="p">(</span><span class="o">&amp;</span><span class="n">t</span><span class="p">[</span><span class="n">i</span><span class="p">],</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w"> </span><span class="n">philosopher</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">id</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">N</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="n">pthread_join</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="n">i</span><span class="p">],</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span>
+
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;</span><span class="se">\n</span><span class="s">All philosophers have eaten. No deadlock occurred.</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+    </div>
+  </section>
+
+  <section class="block" id="output">
+    <h2>Output</h2>
+    <a href="assets/img/practical-4-output.png" target="_blank" rel="noopener"><img class="shot" src="assets/img/practical-4-output.png" alt="Output screenshot of Practical 4: Dining Philosophers Problem using Semaphores"></a>
+    <p class="shot-hint">Tap or click the screenshot to open it full size.</p>
+  </section>
+
+  <a class="back" href="index.html" style="margin-bottom:32px">&larr; Back to Practicals</a>
+</main>
+<footer class="site-footer"><div class="wrap">OS Practical Hub</div></footer>
+<script src="assets/js/main.js"></script>
+</body>
+</html>
